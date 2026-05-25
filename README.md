@@ -1,4 +1,4 @@
-# Matching Engine Skeleton
+# Matching Engine in Go
 
 A minimal Go project with:
 
