@@ -13,7 +13,7 @@ This is a small starting point for a trading system or matching engine prototype
 
 <img width="265" height="269" alt="image" src="https://github.com/user-attachments/assets/dab362f1-e902-411d-9cb9-01d8f07ae303" />
 
-**Machine** : AMD Ryzen 5 5600 6-Core, Windows 11
+**Machine** : AMD Ryzen 5 5600 6-Core, 16 GB RAM
 **Load**:  200 clients, 2000 messages
 
 ## Project layout
