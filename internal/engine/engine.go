@@ -31,9 +31,17 @@ type Trade struct {
 	Qty         int
 }
 
+// orderRef records where a resting order lives so it can be cancelled.
+type orderRef struct {
+	symbol string
+	side   Side
+	price  int
+}
+
 type Engine struct {
-	mu    sync.Mutex
-	books map[string]*book
+	mu     sync.Mutex
+	books  map[string]*book
+	orders map[int64]orderRef
 }
 
 type book struct {
@@ -48,7 +56,8 @@ type sideBook struct {
 
 func New() *Engine {
 	return &Engine{
-		books: make(map[string]*book),
+		books:  make(map[string]*book),
+		orders: make(map[int64]orderRef),
 	}
 }
 
@@ -73,7 +82,58 @@ func (e *Engine) Process(o Order) ([]Trade, error) {
 	defer e.mu.Unlock()
 
 	b := e.getBook(o.Symbol)
-	return b.process(o), nil
+	trades, filled, resting := b.process(o)
+
+	// Unregister resting orders that were completely consumed.
+	for _, id := range filled {
+		delete(e.orders, id)
+	}
+	// Register this order if any remainder was added to the book.
+	if resting {
+		e.orders[o.ID] = orderRef{symbol: o.Symbol, side: o.Side, price: o.Price}
+	}
+
+	return trades, nil
+}
+
+// Cancel removes a resting order from the order book. It returns an error if
+// the order is unknown (already filled, cancelled, or never submitted).
+func (e *Engine) Cancel(id int64) error {
+	if id == 0 {
+		return errors.New("order id must be non-zero")
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	ref, ok := e.orders[id]
+	if !ok {
+		return fmt.Errorf("order %d not found", id)
+	}
+
+	b := e.getBook(ref.symbol)
+	var side *sideBook
+	if ref.side == Buy {
+		side = b.bids
+	} else {
+		side = b.asks
+	}
+
+	queue := side.levels[ref.price]
+	for i, o := range queue {
+		if o.ID == id {
+			side.levels[ref.price] = append(queue[:i], queue[i+1:]...)
+			if len(side.levels[ref.price]) == 0 {
+				side.removeLevel(ref.price)
+			}
+			delete(e.orders, id)
+			return nil
+		}
+	}
+
+	// Should not happen if orderRef is consistent, but clean up anyway.
+	delete(e.orders, id)
+	return fmt.Errorf("order %d not found in book", id)
 }
 
 func (e *Engine) getBook(symbol string) *book {
@@ -94,9 +154,7 @@ func newSideBook() *sideBook {
 	}
 }
 
-func (b *book) process(o Order) []Trade {
-	var trades []Trade
-
+func (b *book) process(o Order) (trades []Trade, filled []int64, resting bool) {
 	switch o.Side {
 	case Buy:
 		for o.Qty > 0 {
@@ -121,6 +179,7 @@ func (b *book) process(o Order) []Trade {
 			resting.Qty -= tradedQty
 
 			if resting.Qty == 0 {
+				filled = append(filled, resting.ID)
 				queue = queue[1:]
 			} else {
 				queue[0] = resting
@@ -135,6 +194,7 @@ func (b *book) process(o Order) []Trade {
 
 		if o.Qty > 0 {
 			b.bids.add(o)
+			return trades, filled, true
 		}
 
 	case Sell:
@@ -160,6 +220,7 @@ func (b *book) process(o Order) []Trade {
 			resting.Qty -= tradedQty
 
 			if resting.Qty == 0 {
+				filled = append(filled, resting.ID)
 				queue = queue[1:]
 			} else {
 				queue[0] = resting
@@ -174,10 +235,11 @@ func (b *book) process(o Order) []Trade {
 
 		if o.Qty > 0 {
 			b.asks.add(o)
+			return trades, filled, true
 		}
 	}
 
-	return trades
+	return trades, filled, false
 }
 
 func (s *sideBook) add(o Order) {
