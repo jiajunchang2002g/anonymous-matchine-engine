@@ -31,7 +31,7 @@ func TestProcess_Validation(t *testing.T) {
 		name  string
 		order Order
 	}{
-		{"zero id", Order{ID: 0, Symbol: "X", Side: Buy, Price: 10, Qty: 1}},
+		{"zero ID", Order{ID: 0, Symbol: "X", Side: Buy, Price: 10, Qty: 1}},
 		{"empty symbol", Order{ID: 1, Symbol: "", Side: Buy, Price: 10, Qty: 1}},
 		{"bad side", Order{ID: 1, Symbol: "X", Side: "HOLD", Price: 10, Qty: 1}},
 		{"zero price", Order{ID: 1, Symbol: "X", Side: Buy, Price: 0, Qty: 1}},

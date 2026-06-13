@@ -120,6 +120,10 @@ func (e *Engine) Cancel(id int64) error {
 	}
 
 	queue := side.levels[ref.price]
+	if len(queue) == 0 {
+		delete(e.orders, id)
+		return fmt.Errorf("order %d not found in book", id)
+	}
 	for i, o := range queue {
 		if o.ID == id {
 			side.levels[ref.price] = append(queue[:i], queue[i+1:]...)
